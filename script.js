@@ -9,31 +9,77 @@
 //
 //This addon prevents anti-debug techniques that target console functions.
 ;(function(){
+"use strict"
 const kConsoleOwnDescriptors = Object.getOwnPropertyDescriptors(console)
 
-const clear = kConsoleOwnDescriptors['clear'].value
-// Make console.clear a NOP function
-const nop = () => {}
-kConsoleOwnDescriptors['clear'].value = nop
-// Also, export a copy of console.clear with another name
-const copy = Object.assign({}, kConsoleOwnDescriptors['clear'])
-kConsoleOwnDescriptors['_clear'] = (copy.value = clear, copy)
+// We need to proxy these functions
+;[
+  'log',
+  'debug',
+  'warn',
+  'info',
+  'error',
+  'table'
+].forEach(function(str) {
+  const logger = kConsoleOwnDescriptors[str]
+  if (!logger) {
+    return
+  }
+  const value = logger.value
+  logger.value = makeProxyLogger(value)
+})
 
-for (const property in kConsoleOwnDescriptors) {
-  let descriptor = kConsoleOwnDescriptors[property]
-  Object.defineProperty(console, property, preventMonkeyPatching(descriptor))
+// And, make these NOP-functions
+;[
+  'clear',
+  'dir',
+  'dirxml',
+  'profile',
+  'profileEnd',
+].forEach(function(str) {
+  const NOP = () => {}
+  const property = kConsoleOwnDescriptors[str]
+  if (!property) {
+    return
+  }
+  const origin = property.value
+  property.value = NOP
+
+  // For testing purpose we export a copy
+  const copy = Object.assign({}, property)
+  copy.value = origin
+  kConsoleOwnDescriptors['___' + str] = copy
+})
+
+avoidMonkeyPatching(kConsoleOwnDescriptors)
+Object.defineProperties(console, kConsoleOwnDescriptors)
+
+function makeProxyLogger(logger) {
+  return function proxyLogger() {
+    for (const arg of arguments) {
+      // We must prevent logging objects that potentially check if dev-tools are open.
+      if ((arg !== null && typeof(arg) === 'object' || typeof(arg) === 'function') && typeof(arg.toString) === 'function') {
+        return
+      }
+    }
+    logger.apply(this, arguments)
+  }
 }
 
-function preventMonkeyPatching(descriptor) {
-  return ({
-    enumerable: true,
-    get: function() {
-      return descriptor.value
-    },
-    set: function(value) {
-      return descriptor.value
+function avoidMonkeyPatching(descriptors) {
+  for (const property in descriptors) {
+    const descriptor = descriptors[property]
+    descriptor.configurable = false
+    if (descriptor.writable) {
+      let value = descriptor.value
+      delete descriptor.value
+      delete descriptor.writable
+      // It is better to use getter-setter because doing `writable = false`
+      // can cause a runtime exception if 'strict_mode' is active.
+      descriptor.get = () => value
+      descriptor.set = () => value
     }
-  })
+  }
 }
 
 }())
