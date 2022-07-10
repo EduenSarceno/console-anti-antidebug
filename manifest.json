@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Console Anti Anti-Debug",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Prevents anti-debug techniques that target console functions",
   "content_scripts": [{
     "matches": ["*://*/*"],
